@@ -104,7 +104,7 @@ function App() {
   const bgFallback = 'bg-gradient-to-br from-pink-400 via-fuchsia-400 to-purple-400';
 
   return (
-    <div className={`min-h-screen transition-all duration-1000 ${bgFallback} ${backgroundClass || ''}`}>
+    <div className={`min-h-[100svh] pb-[env(safe-area-inset-bottom)] transition-all duration-1000 ${bgFallback} ${backgroundClass || ''}`}>
       <div className="container mx-auto px-4 py-8 max-w-6xl">
         {/* Header */}
         <div className="text-center mb-8">
@@ -207,7 +207,11 @@ function App() {
 
             {/* Hourly full width (optional) */}
             {hasHourly(weather) ? (
-              <HourlyStrip hourly={weather.hourly} unit={unit} />
+               <HourlyStrip
+   hourly={weather.hourly}
+   unit={unit}
+   nowIso={(weather.current_weather ?? weather.current)?.time}
+ />
             ) : (
               <div className="glass-card p-6 text-center text-white/80">Nav pieejami stundas dati.</div>
             )}
