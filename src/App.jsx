@@ -7,9 +7,8 @@ import HourlyStrip from './components/HourlyStrip';
 import UnitToggle from './components/UnitToggle';
 import WeatherDetails from './components/WeatherDetails';
 import { useLocalStorage } from './hooks/useLocalStorage';
-import { getWeatherForecast, getCurrentLocation } from './utils/api';
+import { getWeatherForecast, getBestLocation } from './utils/api';
 import { getWeatherInfo } from './utils/weatherCodes';
-
 
 // Default city (Riga, Latvia)
 const DEFAULT_CITY = {
@@ -41,7 +40,28 @@ const WEATHER_BACKGROUNDS = {
   fog: 'bg-fog',
 };
 
-function App() {
+// Tailwind gradient fallback (in case custom bg-* classes don't exist)
+const BG_FALLBACK = 'bg-gradient-to-br from-pink-400 via-fuchsia-400 to-purple-400';
+
+// Helpers
+const hasDaily = (w) => !!w?.daily && Array.isArray(w.daily.time) && w.daily.time.length > 0;
+const hasHourly = (w) => !!w?.hourly && Array.isArray(w.hourly.time) && w.hourly.time.length > 0;
+
+// When `past_days=1` is used, yesterday is index 0. We slice only for the 7-day widget
+// so the SunPath (in WeatherDetails) can still access yesterday if needed.
+const sliceDaily = (daily, offset = 1) => {
+  if (!daily || !Array.isArray(daily.time)) return daily;
+  const len = daily.time.length;
+  const out = { ...daily };
+  Object.keys(daily).forEach((k) => {
+    if (Array.isArray(daily[k]) && daily[k].length === len) {
+      out[k] = daily[k].slice(offset);
+    }
+  });
+  return out;
+};
+
+export default function App() {
   const [weather, setWeather] = useState(null);
   const [currentCity, setCurrentCity] = useLocalStorage('weather-city', DEFAULT_CITY);
   const [unit, setUnit] = useLocalStorage('weather-unit', 'C');
@@ -49,28 +69,30 @@ function App() {
   const [error, setError] = useState(null);
   const [backgroundClass, setBackgroundClass] = useState('bg-clear');
 
-  const hasDaily = (w) => !!w?.daily && Array.isArray(w.daily.time) && w.daily.time.length > 0;
-  const hasHourly = (w) => !!w?.hourly && Array.isArray(w.hourly.time) && w.hourly.time.length > 0;
+  const setBgFromWeather = (data) => {
+    const current = data.current_weather ?? data.current ?? null;
+    if (!current) {
+      setBackgroundClass('bg-clear');
+      return;
+    }
+    // Prefer API's day/night flag when available
+    if (typeof current.is_day === 'number' && current.is_day === 0) {
+      setBackgroundClass('bg-night');
+      return;
+    }
+    const code = current.weathercode ?? current.weather_code;
+    const group = getWeatherInfo(code).group;
+    setBackgroundClass(WEATHER_BACKGROUNDS[group] || 'bg-clear');
+  };
 
   const loadWeatherData = async (city) => {
     setLoading(true);
     setError(null);
-
     try {
       const data = await getWeatherForecast(city.latitude, city.longitude);
       setWeather(data);
       setCurrentCity(city);
-
-      const current = data.current_weather ?? data.current ?? null;
-      if (current) {
-        const code = current.weathercode ?? current.weather_code;
-        const group = getWeatherInfo(code).group;
-        const hour = new Date().getHours();
-        const isNight = hour < 6 || hour > 20;
-        setBackgroundClass(isNight ? 'bg-night' : (WEATHER_BACKGROUNDS[group] || 'bg-clear'));
-      } else {
-        setBackgroundClass('bg-clear');
-      }
+      setBgFromWeather(data);
     } catch (e) {
       setError(e?.message || 'Neizdevās ielādēt laika apstākļus');
       setBackgroundClass('bg-stormy');
@@ -82,15 +104,24 @@ function App() {
   useEffect(() => {
     (async () => {
       try {
-        const loc = await getCurrentLocation();
+        // Best effort: cache → GPS (if not denied) → IP
+        const loc = await getBestLocation();
+        // Keep your Latvia gate (optional)
         const inLV =
           loc.latitude >= 55.5 && loc.latitude <= 58.1 &&
           loc.longitude >= 20.5 && loc.longitude <= 28.3;
+
         if (inLV) {
-          await loadWeatherData({ name: 'Jūsu atrašanās vieta', latitude: loc.latitude, longitude: loc.longitude });
+          await loadWeatherData({
+            name: loc.city ? `${loc.city} (jūsu atrašanās vieta)` : 'Jūsu atrašanās vieta',
+            latitude: loc.latitude,
+            longitude: loc.longitude,
+          });
           return;
         }
-      } catch {}
+      } catch {
+        // ignore and fall back to saved/default city
+      }
       await loadWeatherData(currentCity || DEFAULT_CITY);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -100,11 +131,8 @@ function App() {
   const handleQuickPick = (city) => loadWeatherData(city);
   const handleRetry = () => loadWeatherData(currentCity || DEFAULT_CITY);
 
-  // Tailwind gradient fallback (in case custom bg-* classes don't exist)
-  const bgFallback = 'bg-gradient-to-br from-pink-400 via-fuchsia-400 to-purple-400';
-
   return (
-    <div className={`min-h-[100svh] pb-[env(safe-area-inset-bottom)] transition-all duration-1000 ${bgFallback} ${backgroundClass || ''}`}>
+    <div className={`min-h-[100svh] pb-[env(safe-area-inset-bottom)] transition-all duration-1000 ${BG_FALLBACK} ${backgroundClass || ''}`}>
       <div className="container mx-auto px-4 py-8 max-w-6xl">
         {/* Header */}
         <div className="text-center mb-8">
@@ -116,7 +144,6 @@ function App() {
         <div className="mb-8">
           <SearchBar onCitySelect={handleCitySelect} currentCity={currentCity} />
         </div>
-        
 
         {/* Quick picks */}
         <div className="mb-8">
@@ -138,10 +165,7 @@ function App() {
         {/* Units */}
         <div className="mb-8 flex justify-center">
           <UnitToggle unit={unit} onUnitChange={setUnit} />
-        
-
-
-</div>
+        </div>
 
         {/* Loading */}
         {loading && (
@@ -160,14 +184,15 @@ function App() {
               <div className="text-6xl mb-4">⚠️</div>
               <h3 className="text-white text-xl font-bold mb-2 text-shadow">Kļūda</h3>
               <p className="text-white/80 mb-4 text-shadow">{error}</p>
-              <button onClick={handleRetry} className="glass-button px-6 py-3 text-white font-medium hover:scale-105 transition-transform">
+              <button
+                onClick={handleRetry}
+                className="glass-button px-6 py-3 text-white font-medium hover:scale-105 transition-transform"
+              >
                 Mēģināt vēlreiz
               </button>
             </div>
           </div>
         )}
-
-
 
         {/* Content */}
         {!!weather && !loading && !error && (
@@ -176,7 +201,7 @@ function App() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* LEFT: combined card */}
               <div className="glass-card p-6 lg:p-8 space-y-6">
-                {/* render CurrentCard WITHOUT its own container */}
+                {/* Current (no own container) */}
                 <CurrentCard
                   weather={weather.current_weather ?? weather.current ?? null}
                   city={currentCity}
@@ -184,34 +209,37 @@ function App() {
                   hourly={hasHourly(weather) ? weather.hourly : null}
                   containerless
                 />
+
                 <div className="border-t border-white/10" />
-                {/* render WeatherDetails WITHOUT its own container */}
- <WeatherDetails
-   weather={weather.current_weather ?? weather.current ?? {}}
-   hourly={hasHourly(weather) ? weather.hourly : null}
-   daily={hasDaily(weather) ? weather.daily : null}
-   unit={unit}
-   containerless
- />
+
+                {/* Details (no own container) */}
+                <WeatherDetails
+                  weather={weather.current_weather ?? weather.current ?? {}}
+                  hourly={hasHourly(weather) ? weather.hourly : null}
+                  daily={hasDaily(weather) ? weather.daily : null}
+                  unit={unit}
+                  containerless
+                  // hideTitle // <- uncomment to hide "Detalizēti dati" title
+                />
               </div>
 
-              {/* RIGHT: 7-day forecast */}
+              {/* RIGHT: 7-day forecast, start from today (skip yesterday when past_days=1) */}
               <div>
                 {hasDaily(weather) ? (
-                  <DailyForecast daily={weather.daily} unit={unit} />
+                  <DailyForecast daily={sliceDaily(weather.daily, 1)} unit={unit} />
                 ) : (
                   <div className="glass-card p-6 text-white/80">Nav pieejami dienas dati.</div>
                 )}
               </div>
             </div>
 
-            {/* Hourly full width (optional) */}
+            {/* Hourly full width */}
             {hasHourly(weather) ? (
-               <HourlyStrip
-   hourly={weather.hourly}
-   unit={unit}
-   nowIso={(weather.current_weather ?? weather.current)?.time}
- />
+              <HourlyStrip
+                hourly={weather.hourly}
+                unit={unit}
+                nowIso={(weather.current_weather ?? weather.current)?.time}
+              />
             ) : (
               <div className="glass-card p-6 text-center text-white/80">Nav pieejami stundas dati.</div>
             )}
@@ -237,5 +265,3 @@ function App() {
     </div>
   );
 }
-
-export default App;
