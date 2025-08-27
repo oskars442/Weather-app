@@ -1,6 +1,7 @@
 // src/components/WeatherDetails.jsx
 import { useState, useEffect } from 'react';
 import { formatTime } from '../utils/dateHelpers';
+import { formatTemp } from '../utils/format';
 
 // ── small helpers ────────────────────────────────────────────────────────────
 const clamp01 = (x) => (Number.isFinite(x) ? Math.max(0, Math.min(1, x)) : 0);
@@ -221,7 +222,7 @@ const WeatherDetails = ({
         <Tile
           icon="🌡️"
           label="Sajūta"
-          value={feelsLike == null ? '—' : `${Math.round(feelsLike)}°${unit}`}
+           value={feelsLike == null ? '—' : formatTemp(feelsLike, unit)}
         />
         <Tile
           icon="🔽"

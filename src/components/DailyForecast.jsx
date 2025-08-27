@@ -1,4 +1,5 @@
 import { getWeatherInfo } from '../utils/weatherCodes';
+import { formatTemp } from '../utils/format';
 
 const DailyForecast = ({ daily, unit }) => {
   // Add proper validation
@@ -85,10 +86,10 @@ const DailyForecast = ({ daily, unit }) => {
               <div className="flex-1 text-right">
                 <div className="flex items-center justify-end space-x-2">
                   <span className="text-white font-semibold">
-                    {maxTemp ? Math.round(maxTemp) : '--'}°
+                    {maxTemp != null ? formatTemp(maxTemp, unit) : '--'}°
                   </span>
                   <span className="text-white/60">
-                    {minTemp ? Math.round(minTemp) : '--'}°
+                    {minTemp != null ? formatTemp(minTemp, unit) : '--'}°
                   </span>
                 </div>
               </div>

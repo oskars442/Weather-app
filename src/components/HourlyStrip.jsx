@@ -91,7 +91,7 @@ const HourlyStrip = ({ hourly, unit, nowIso }) => {
 
               {/* Temperature */}
               <div className="text-white font-bold text-lg mb-2">
-                {h.temp != null ? Math.round(h.temp) : '--'}{unitSymbol}
+               {h.temp != null ? formatTemp(h.temp, unit) : '--'}
               </div>
 
               {/* Details */}
